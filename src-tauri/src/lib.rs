@@ -3,6 +3,10 @@ use mouse_position::mouse_position::Mouse;
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::image::Image;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri_plugin_positioner::{Position, WindowExt};
+
 
 const OVERLAY_DURATION_MS: u64 = 17_250;
 
@@ -47,7 +51,7 @@ fn get_display_snapshot() -> Result<DisplaySnapshot, String> {
             y: display.y,
             width: display.width,
             height: display.height,
-            scale_factor: display.scale_factor,
+            scale_factor: display.scale_factor as f64,
         })
         .collect();
 
@@ -111,7 +115,7 @@ fn show_reminder_overlay(app: AppHandle, reminder: Value) -> Result<(), String> 
     let _ = window.set_ignore_cursor_events(true);
 
     tauri::async_runtime::spawn(async move {
-        tauri::async_runtime::sleep(std::time::Duration::from_millis(OVERLAY_DURATION_MS)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(OVERLAY_DURATION_MS)).await;
         if let Some(window) = app.get_webview_window(&label) {
             let _ = window.close();
         }
@@ -132,12 +136,70 @@ fn percent_encode(input: &str) -> String {
         .collect()
 }
 
+#[tauri::command]
+fn quit_app(app: AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command]
+fn hide_window(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_positioner::init())
+        .setup(|app| {
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            // Load the tray icon
+            let tray_icon = Image::from_bytes(include_bytes!("../icons/trayTemplate.png"))
+                .expect("Failed to load tray icon");
+
+            let app_handle = app.handle().clone();
+
+            // Build the tray icon — toggle window on left click
+            let app_handle_for_tray = app_handle.clone();
+            let _tray = TrayIconBuilder::new()
+                .icon(tray_icon)
+                .on_tray_icon_event(move |_tray, event| {
+                    tauri_plugin_positioner::on_tray_event(&app_handle_for_tray, &event);
+
+                    // Only act on mouse-UP — the Click event fires on both
+                    // press and release, so without this guard we'd toggle
+                    // show→hide on the very same click.
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event {
+                        if let Some(window) = app_handle_for_tray.get_webview_window("main") {
+                            let is_visible = window.is_visible().unwrap_or(false);
+                            if is_visible {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.move_window(Position::TrayCenter);
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                })
+                .build(app)?;
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_display_snapshot,
-            show_reminder_overlay
+            show_reminder_overlay,
+            quit_app,
+            hide_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running FinalCall");
 }
+
+

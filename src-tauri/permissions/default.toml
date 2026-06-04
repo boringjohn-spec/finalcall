@@ -1,0 +1,10 @@
+[[permission]]
+identifier = "allow-commands"
+description = "Allows access to custom commands"
+commands.allow = [
+  "get_display_snapshot",
+  "show_reminder_overlay",
+  "quit_app",
+  "hide_window"
+
+]

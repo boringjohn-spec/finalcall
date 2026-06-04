@@ -4,6 +4,7 @@ import { ReminderOverlay } from "./components/ReminderOverlay";
 import { MenuBarPanel } from "./components/MenuBarPanel";
 import { ReminderQueue } from "./features/reminders/reminderQueue";
 import type { ActiveReminder, ReminderLeadTime, ReminderSettings } from "./features/reminders/types";
+import { invokeIfAvailable, isTauriRuntime } from "./lib/tauri";
 
 function parseOverlayReminder(): ActiveReminder | null {
   const [, query = ""] = window.location.hash.split("?");
@@ -30,6 +31,39 @@ export default function App() {
 
   useEffect(() => queue.subscribe(setActiveReminder), [queue]);
 
+  // Auto-hide the panel when the window loses focus (click-outside behaviour).
+  // We use the JS window blur event instead of Rust's Focused(false) because on
+  // macOS with ActivationPolicy::Accessory, the OS fires Focused(false) immediately
+  // on mouse-up after the tray click, which would close the panel instantly.
+  // The 150ms delay lets the window fully settle before hiding.
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+
+    let hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const onBlur = () => {
+      hideTimer = setTimeout(() => {
+        void invokeIfAvailable("hide_window");
+      }, 150);
+    };
+
+    const onFocus = () => {
+      if (hideTimer !== null) {
+        clearTimeout(hideTimer);
+        hideTimer = null;
+      }
+    };
+
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+      if (hideTimer !== null) clearTimeout(hideTimer);
+    };
+  }, []);
+
   const overlayReminder = window.location.hash.startsWith("#/overlay") ? parseOverlayReminder() : null;
 
   if (overlayReminder) {
@@ -54,7 +88,7 @@ export default function App() {
         onSettingsChange={setSettings}
         onTriggerReminder={triggerReminder}
       />
-      <ReminderOverlay reminder={activeReminder} />
+      {!isTauriRuntime() && <ReminderOverlay reminder={activeReminder} />}
     </>
   );
 }

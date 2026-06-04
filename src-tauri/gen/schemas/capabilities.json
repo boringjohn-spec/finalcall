@@ -1,0 +1,1 @@
+{"default-capability":{"identifier":"default-capability","description":"Default capabilities for FinalCall windows","local":true,"windows":["main","reminder-overlay-*"],"permissions":["core:default","positioner:default","allow-commands"]}}

@@ -15,12 +15,15 @@
       {
         "label": "main",
         "title": "FinalCall",
-        "width": 980,
-        "height": 720,
-        "resizable": true,
+        "width": 360,
+        "height": 550,
+        "resizable": false,
         "fullscreen": false,
-        "decorations": true
+        "decorations": false,
+        "visible": false,
+        "skipTaskbar": true
       }
+
     ],
     "security": {
       "csp": null
